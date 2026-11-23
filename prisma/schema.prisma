@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionType {
+  income
+  expense
+}
+
+// ---------------------------------------------------------------------------
+// Auth.js (NextAuth v5) models + MoneyPixel gamification fields, merged in one User.
+// Every student gets their own User row, so coins, EXP, room, transactions and
+// savings are fully isolated per account.
+// ---------------------------------------------------------------------------
+model User {
+  // --- standard Auth.js fields ---
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  // bcrypt hash for email/password accounts. NULL for Google-only accounts.
+  // Never store or log a plain password.
+  password      String?
+
+  // --- MoneyPixel: gamification progress ---
+  // New students start with 100 coins (keep in sync with STARTING_COINS in lib/starterBills.ts)
+  totalCoins  Int @default(100) @map("total_coins")
+  energyLevel Int @default(100) @map("energy_level")
+  exp         Int @default(0) @map("exp")
+  roomLevel   Int @default(1) @map("room_level") // always = floor(exp / 100) + 1
+
+  // --- MoneyPixel: savings goal (Piggy Bank) ---
+  savingsGoalName   String? @map("savings_goal_name")
+  savingsGoalTarget Float   @default(0) @map("savings_goal_target")
+  savingsCurrent    Float   @default(0) @map("savings_current")
+  // monthly spending budget in THB (0 = no budget set)
+  monthlyBudget     Float   @default(0) @map("monthly_budget")
+
+  // --- cooldowns for the interactive room actions ---
+  lastSleepAt DateTime? @map("last_sleep_at")
+  lastPetAt   DateTime? @map("last_pet_at")
+
+  // --- avatar ---
+  gender  String @default("male") // male | female | unisex
+  hatId   String @default("none") @map("hat_id")
+  shirtId String @default("casual_indigo") @map("shirt_id")
+  pantsId String @default("jeans_dark") @map("pants_id")
+  shoesId String @default("sneakers_white") @map("shoes_id")
+
+  // purchased items per slot (comma-separated ids); free items count as owned automatically
+  ownedHats   String @default("") @map("owned_hats")
+  ownedShirts String @default("") @map("owned_shirts")
+  ownedPants  String @default("") @map("owned_pants")
+  ownedShoes  String @default("") @map("owned_shoes")
+
+  // --- pet ---
+  petType String  @default("none") @map("pet_type") // none | cat | dog
+  petName String? @map("pet_name")
+
+  // --- room furniture ---
+  hasBed       Boolean @default(true) @map("has_bed")
+  hasSofa      Boolean @default(false) @map("has_sofa")
+  hasTv        Boolean @default(false) @map("has_tv")
+  hasTreadmill Boolean @default(false) @map("has_treadmill") // decorative only
+  hasDesk      Boolean @default(true) @map("has_desk")
+  hasWardrobe  Boolean @default(true) @map("has_wardrobe")
+
+  createdAt DateTime @default(now())
+
+  // --- relations ---
+  accounts     Account[]
+  sessions     Session[]
+  transactions Transaction[]
+  bills        FixedBill[]
+  questClaims  QuestClaim[]
+
+  @@map("users")
+}
+
+// Auth.js: one row per linked OAuth login (here: Google)
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+// Auth.js: only used by the "database" session strategy; we use JWT sessions, but the adapter expects the model
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// Auth.js: email / magic-link tokens (unused with Google only, required by the adapter)
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Core of the app. Every logged transaction belongs to exactly one user and pays out coins + EXP.
+model Transaction {
+  id           Int             @id @default(autoincrement())
+  amount       Decimal         @db.Decimal(10, 2)
+  type         TransactionType
+  category     String
+  description  String?
+  date         DateTime        @default(now())
+  coinsAwarded Int             @default(10) @map("coins_awarded") // reverted on delete (anti-exploit)
+  expAwarded   Int             @default(0) @map("exp_awarded") // reverted on delete (anti-exploit)
+
+  // set only for a verified AI Auto-Scan (single-use token nonce): +30 EXP bonus and the scan quest
+  aiScanNonce String? @unique @map("ai_scan_nonce")
+
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+  @@index([userId, createdAt])
+  @@map("transactions")
+}
+
+// Recurring monthly bills (dorm rent, utilities, ...). A starter set is created for each new user.
+model FixedBill {
+  id        Int     @id @default(autoincrement())
+  name      String
+  icon      String
+  amount    Decimal @db.Decimal(10, 2)
+  paidMonth String? @map("paid_month")
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("fixed_bills")
+}
+
+// One row per quest per day per user. The unique key makes a double claim impossible.
+model QuestClaim {
+  id        Int      @id @default(autoincrement())
+  questId   String   @map("quest_id")
+  day       String   @map("day") // "YYYY-MM-DD" (local)
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questId, day])
+  @@map("quest_claims")
+}

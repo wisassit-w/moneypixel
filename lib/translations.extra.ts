@@ -128,6 +128,33 @@ export const extraEn = {
     "csv.amount": "Amount (THB)",
     "csv.coins": "Coins awarded",
     "csv.exp": "EXP awarded",
+
+    // ---- scanner: gallery + camera ----
+    "scan.gallery": "Choose from gallery",
+    "scan.camera": "Take a photo",
+    "scan.dropHint": "Drop a photo here, paste it with Ctrl+V, or pick one below",
+
+    // ---- export (Excel / PDF / CSV / JSON) ----
+    "export.title": "Download your data",
+    "export.hint": "This month's summary and every transaction.",
+    "export.excel": "Excel",
+    "export.excelHint": "Formatted spreadsheet",
+    "export.pdf": "PDF report",
+    "export.pdfHint": "Easy to read and print",
+    "export.csv": "CSV",
+    "export.csvHint": "Opens in Excel, Thai-ready",
+    "export.json": "JSON",
+    "export.jsonHint": "Full data backup",
+    "export.pdfTitle": "Monthly financial report",
+    "export.balance": "Remaining balance",
+    "export.savingsRate": "Savings rate",
+    "export.item": "Item",
+    "export.transactions": "Transactions",
+    "export.noTransactions": "No transactions in this month.",
+    "export.truncated": "Showing the first {n} transactions only. Download Excel, CSV or JSON for all of them.",
+    "export.sheetSummary": "Summary",
+    "export.sheetTransactions": "Transactions",
+    "export.generated": "Generated {date}",
 } as const;
 
 export const extraTh: Record<keyof typeof extraEn, string> = {
@@ -259,4 +286,31 @@ export const extraTh: Record<keyof typeof extraEn, string> = {
     "csv.amount": "จำนวนเงิน (บาท)",
     "csv.coins": "เหรียญที่ได้รับ",
     "csv.exp": "EXP ที่ได้รับ",
+
+    // ---- scanner: gallery + camera ----
+    "scan.gallery": "เลือกจากแกลเลอรี",
+    "scan.camera": "ถ่ายรูป",
+    "scan.dropHint": "ลากรูปมาวางที่นี่ วางด้วย Ctrl+V หรือเลือกรูปด้านล่าง",
+
+    // ---- export (Excel / PDF / CSV / JSON) ----
+    "export.title": "ดาวน์โหลดข้อมูลของคุณ",
+    "export.hint": "สรุปประจำเดือนและรายการทั้งหมด",
+    "export.excel": "Excel",
+    "export.excelHint": "ตารางที่จัดรูปแบบแล้ว",
+    "export.pdf": "รายงาน PDF",
+    "export.pdfHint": "อ่านง่าย พร้อมพิมพ์",
+    "export.csv": "CSV",
+    "export.csvHint": "เปิดใน Excel ได้ ภาษาไทยไม่เพี้ยน",
+    "export.json": "JSON",
+    "export.jsonHint": "สำรองข้อมูลทั้งหมด",
+    "export.pdfTitle": "รายงานการเงินประจำเดือน",
+    "export.balance": "ยอดคงเหลือ",
+    "export.savingsRate": "อัตราการออม",
+    "export.item": "รายการ",
+    "export.transactions": "รายการธุรกรรม",
+    "export.noTransactions": "ไม่มีรายการในเดือนนี้",
+    "export.truncated": "แสดงเฉพาะ {n} รายการแรก ดาวน์โหลด Excel, CSV หรือ JSON เพื่อดูทั้งหมด",
+    "export.sheetSummary": "สรุป",
+    "export.sheetTransactions": "รายการ",
+    "export.generated": "สร้างเมื่อ {date}",
 };

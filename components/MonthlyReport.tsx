@@ -1,7 +1,8 @@
 "use client";
 
-import { Coins, Download, PiggyBank, Sparkles, Star, TrendingDown, TrendingUp } from "lucide-react";
+import { Coins, PiggyBank, Sparkles, Star, TrendingDown, TrendingUp } from "lucide-react";
 import CategoryIcon from "@/components/CategoryIcon";
+import ExportMenu from "@/components/ExportMenu";
 import { getCategory } from "@/lib/categories";
 import { formatCurrency } from "@/lib/format";
 import { useLanguage } from "@/context/LanguageContext";
@@ -25,7 +26,7 @@ function loggingKey(txCount: number) {
 
 /** The report cards for one month. Used inside the modal and on the /report page. */
 export default function MonthlyReport({ summary: s }: { summary: MonthlySummary }) {
-    const { lang, t, tx } = useLanguage();
+    const { t, tx } = useLanguage();
 
     const spentPct = s.income > 0 ? Math.min(100, Math.round((s.expense / s.income) * 100)) : s.expense > 0 ? 100 : 0;
     const maxCat = Math.max(1, ...s.topCategories.map((c) => c.amount));
@@ -137,15 +138,8 @@ export default function MonthlyReport({ summary: s }: { summary: MonthlySummary 
                 <p className="mt-1 text-sm text-amber-800/80">{t("sum.coinsDetail", { tx: s.coinsEarned, n: s.txCount })}</p>
             </section>
 
-            {/* CSV export: a plain link (not next/link) so nothing is prefetched; the server sends it as a download */}
-            <a
-                href={`/api/export?month=${s.monthKey}&lang=${lang}`}
-                download
-                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-sage-600 text-sm font-semibold text-white shadow-sm transition-all hover:bg-sage-700 active:scale-[0.98]"
-            >
-                <Download className="h-4 w-4" />
-                {t("csv.download")}
-            </a>
+            {/* Excel, PDF, CSV and JSON downloads */}
+            <ExportMenu month={s.monthKey} />
 
             <p className="flex items-center justify-center gap-1.5 text-center text-sm text-stone-500">
                 <Sparkles className="h-4 w-4 text-sage-ink" />

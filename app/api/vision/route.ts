@@ -259,6 +259,7 @@ function raceModels(genAI: GoogleGenerativeAI, models: string[], image: ImagePar
         let active = 0;
         let settled = false;
         let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+        // eslint-disable-next-line prefer-const -- assigned after `finish` is defined
         let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
 
         const finish = (outcome: Outcome) => {

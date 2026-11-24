@@ -1,18 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import { Loader2, Plus, ScanLine, Sparkles, Trash2, X } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { Plus, ScanLine, Sparkles, Trash2, X } from "lucide-react";
 import { addTransaction } from "@/app/finance/actions";
 import { categoriesFor, type TxType } from "@/lib/categories";
 import CategoryIcon from "@/components/CategoryIcon";
+import ScanModal, { type ScanResult } from "@/components/finance/ScanModal";
 import { useLanguage } from "@/context/LanguageContext";
 import { emitReaction } from "@/lib/reactionBus";
 
 const inputCls =
     "rounded-2xl border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm text-stone-800 outline-none transition-all focus:border-sage-ink/50 focus:bg-card focus:ring-4 focus:ring-emerald-50";
-
-// Result of /api/vision (an AI-scanned receipt or food photo)
-type ScanResult = { name: string; category: string; amount: number; estimated: boolean; token: string };
 
 export default function TransactionForm() {
     const { t } = useLanguage();
@@ -181,10 +179,10 @@ function TransactionModal({ onClose }: { onClose: () => void }) {
                                 type="button"
                                 onClick={() => changeType(tp)}
                                 className={`rounded-xl py-2 text-sm font-semibold transition-all ${type === tp
-                                        ? tp === "income"
-                                            ? "bg-card text-sage-ink shadow-sm"
-                                            : "bg-card text-orange-800 shadow-sm"
-                                        : "text-stone-500 hover:text-stone-700"
+                                    ? tp === "income"
+                                        ? "bg-card text-sage-ink shadow-sm"
+                                        : "bg-card text-orange-800 shadow-sm"
+                                    : "text-stone-500 hover:text-stone-700"
                                     }`}
                             >
                                 {t(tp === "income" ? "fin.income" : "fin.expense")}
@@ -265,228 +263,5 @@ function TransactionModal({ onClose }: { onClose: () => void }) {
 
             {scanOpen && <ScanModal onClose={() => setScanOpen(false)} onResult={applyScan} />}
         </>
-    );
-}
-
-/**
- * Shrinks the photo to max 1280px and returns it as a JPEG Data URL ("data:image/jpeg;base64,...").
- * Smaller uploads are faster and cheaper, and phone photos stay under the server's size limit.
- */
-async function shrinkToDataUrl(file: File, maxSide = 1280): Promise<string> {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
-
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("canvas unavailable");
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    bitmap.close();
-
-    return canvas.toDataURL("image/jpeg", 0.8); // ปรับคุณภาพลดลงเหลือ 0.8 เพื่อให้อัปโหลดเร็วขึ้น
-}
-
-/** Upload / paste a receipt or food photo, let Gemini read it, and hand the result back to the form. */
-function ScanModal({ onClose, onResult }: { onClose: () => void; onResult: (r: ScanResult) => void }) {
-    const { lang, t } = useLanguage();
-    const inputRef = useRef<HTMLInputElement>(null);
-    const [file, setFile] = useState<File | null>(null);
-    const [preview, setPreview] = useState<string | null>(null);
-    const [dragOver, setDragOver] = useState(false);
-    const [busy, setBusy] = useState(false);
-    const [slow, setSlow] = useState(false); // เพิ่มสถานะเช็คว่า AI กำลังทำงานช้า
-    const [error, setError] = useState<string | null>(null);
-
-    // free the temporary preview URL
-    useEffect(() => {
-        return () => {
-            if (preview) URL.revokeObjectURL(preview);
-        };
-    }, [preview]);
-
-    function pick(f: File | undefined | null) {
-        if (!f) return;
-        if (!f.type.startsWith("image/")) {
-            setError(t("scan.notImage"));
-            return;
-        }
-        setError(null);
-        setFile(f);
-        setPreview(URL.createObjectURL(f));
-    }
-
-    // Escape closes this dialog; Ctrl+V pastes a screenshot or copied photo
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-        const onPaste = (e: ClipboardEvent) => {
-            const img = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith("image/"));
-            if (img) pick(img);
-        };
-        window.addEventListener("keydown", onKey);
-        window.addEventListener("paste", onPaste);
-        return () => {
-            window.removeEventListener("keydown", onKey);
-            window.removeEventListener("paste", onPaste);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [onClose]);
-
-    async function analyze() {
-        if (!file || busy) return;
-        setBusy(true);
-        setSlow(false);
-        setError(null);
-
-        // หลังจากผ่านไป 7 วินาที แจ้งผู้ใช้ว่าระบบกำลังประมวลผลอยู่
-        const slowTimer = setTimeout(() => setSlow(true), 7000);
-        // กำหนด Timeout ที่ 40 วินาที เพื่อป้องกันค้างนานเกินไป
-        const controller = new AbortController();
-        const abortTimer = setTimeout(() => controller.abort(), 40_000);
-
-        try {
-            // 1. Shrink the photo and turn it into a base64 Data URL
-            let image: string;
-            try {
-                image = await shrinkToDataUrl(file);
-            } catch {
-                setError(t("scan.readFail")); // e.g. a format the browser can't decode
-                setBusy(false);
-                return;
-            }
-
-            // 2. Plain JSON fetch (NOT a Server Action and NOT multipart, so Next can't mistake it for one)
-            const res = await fetch("/api/vision", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ image, mimeType: "image/jpeg", lang }),
-                signal: controller.signal,
-            });
-
-            // Read as text first: a missing route returns an HTML page, and res.json() would throw a confusing error
-            const raw = await res.text();
-            let data: (Partial<ScanResult> & { error?: string }) | null = null;
-            try {
-                data = JSON.parse(raw);
-            } catch {
-                console.error(`[scan] /api/vision answered HTTP ${res.status} with a non-JSON body:`, raw.slice(0, 200));
-            }
-
-            if (!res.ok || !data || typeof data.amount !== "number" || !data.token) {
-                throw new Error(data?.error ?? `${t("ai.errorGeneric")} (HTTP ${res.status})`);
-            }
-
-            onResult({
-                name: data.name ?? "",
-                category: data.category ?? "Food & Drinks",
-                amount: data.amount,
-                estimated: data.estimated === true,
-                token: data.token,
-            });
-        } catch (err) {
-            const aborted = err instanceof DOMException && err.name === "AbortError";
-            setError(aborted ? t("ai.errorGeneric") : err instanceof Error ? err.message : t("ai.errorGeneric"));
-            setBusy(false);
-        } finally {
-            clearTimeout(slowTimer);
-            clearTimeout(abortTimer);
-        }
-    }
-
-    return (
-        <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim/40 p-4 backdrop-blur-sm"
-            onClick={(e) => e.target === e.currentTarget && onClose()}
-        >
-            <div className="w-full max-w-sm space-y-4 rounded-2xl border border-stone-100 bg-card p-6 text-stone-800 shadow-xl">
-                <div className="flex items-start justify-between gap-3">
-                    <div>
-                        <h3 className="flex items-center gap-2 text-lg font-bold">
-                            <ScanLine className="h-5 w-5 text-sage-ink" />
-                            {t("scan.title")}
-                        </h3>
-                        <p className="mt-0.5 text-sm text-stone-500">{t("scan.subtitle")}</p>
-                    </div>
-                    <button
-                        onClick={onClose}
-                        aria-label={t("common.close")}
-                        className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
-                </div>
-
-                {/* Hidden picker: capture="environment" opens the rear camera on phones */}
-                <input
-                    ref={inputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={(e) => {
-                        pick(e.target.files?.[0]);
-                        e.target.value = "";
-                    }}
-                />
-
-                {preview ? (
-                    <div className="relative overflow-hidden rounded-2xl border border-stone-100 bg-stone-50">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={preview} alt="" className="max-h-64 w-full object-contain" />
-                        {!busy && (
-                            <button
-                                onClick={() => {
-                                    setFile(null);
-                                    setPreview(null);
-                                }}
-                                aria-label={t("scan.remove")}
-                                className="absolute right-2 top-2 rounded-lg bg-card/90 p-1.5 text-stone-500 shadow-sm transition-colors hover:text-rose-600"
-                            >
-                                <Trash2 className="h-4 w-4" />
-                            </button>
-                        )}
-                    </div>
-                ) : (
-                    <div
-                        onClick={() => inputRef.current?.click()}
-                        onDragOver={(e) => {
-                            e.preventDefault();
-                            setDragOver(true);
-                        }}
-                        onDragLeave={() => setDragOver(false)}
-                        onDrop={(e) => {
-                            e.preventDefault();
-                            setDragOver(false);
-                            pick(e.dataTransfer.files[0]);
-                        }}
-                        className={`flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed px-4 py-10 text-center transition-all ${dragOver
-                                ? "border-sage-ink bg-emerald-50"
-                                : "border-stone-200 bg-cream hover:border-emerald-300 hover:bg-emerald-50/50"
-                            }`}
-                    >
-                        <ScanLine className={`h-8 w-8 ${dragOver ? "text-sage-ink" : "text-stone-400"}`} />
-                        <p className="text-sm font-medium text-stone-700">{t("scan.drop")}</p>
-                    </div>
-                )}
-
-                {/* แสดงข้อความแจ้งเตือนเมื่อ AI ทำงานช้ากว่าปกติ */}
-                {busy && slow && <p className="text-center text-xs text-stone-500">{t("scan.slow")}</p>}
-
-                {error && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
-
-                <button
-                    onClick={analyze}
-                    disabled={!file || busy}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-sage-600 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-sage-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                    {busy ? t("scan.analyzing") : t("scan.analyze")}
-                </button>
-            </div>
-        </div>
     );
 }

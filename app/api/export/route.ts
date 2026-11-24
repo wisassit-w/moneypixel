@@ -1,20 +1,35 @@
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
-import { dayKey, monthKey, monthRange } from "@/lib/time";
-import { dateOfMonth, resolveMonth } from "@/lib/months";
-import { translate, type Lang } from "@/lib/translations";
+import { monthKey } from "@/lib/time";
+import { resolveMonth } from "@/lib/months";
+import type { Lang } from "@/lib/translations";
+import { isExportFormat, type ExportFormat } from "@/lib/export/types";
+import { loadExportData } from "@/lib/export/data";
+import { buildCsv } from "@/lib/export/csv";
+import { buildJson } from "@/lib/export/json";
+import { buildXlsx } from "@/lib/export/xlsx";
+import { buildPdf } from "@/lib/export/pdf";
 
 // NOTE: this is a normal API Route Handler. It must NOT contain "use server".
-// GET /api/export?month=2026-11&lang=th  ->  moneypixel-2026-11.csv
-// Generated on the server so the file always holds EVERY transaction of the month.
+// GET /api/export?month=2026-11&format=xlsx|pdf|csv|json&lang=th  ->  moneypixel-2026-11.<ext>
+// Generated on the server so the file always holds EVERY transaction of the month, and so the download is a plain
+// link that works on every phone browser (no client-side blob tricks).
 
-const MAX_ROWS = 20_000;
+const TYPES: Record<ExportFormat, string> = {
+    csv: "text/csv; charset=utf-8",
+    json: "application/json; charset=utf-8",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    pdf: "application/pdf",
+};
 
-/** One CSV cell. Text starting with = + - @ (or tab/CR) gets a leading ' so Excel can't run it as a formula. */
-function textCell(value: string): string {
-    const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-    return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+function download(body: string | Buffer, format: ExportFormat, month: string) {
+    return new Response(typeof body === "string" ? body : new Uint8Array(body), {
+        headers: {
+            "Content-Type": TYPES[format],
+            "Content-Disposition": `attachment; filename="moneypixel-${month}.${format}"`,
+            "Cache-Control": "no-store",
+        },
+    });
 }
 
 export async function GET(req: Request) {
@@ -26,41 +41,24 @@ export async function GET(req: Request) {
 
     const params = new URL(req.url).searchParams;
     const lang: Lang = params.get("lang") === "en" ? "en" : "th";
+    const format = params.get("format") ?? "csv"; // csv stays the default, so old links keep working
+    if (!isExportFormat(format)) return new Response("Unsupported format", { status: 400 });
     const month = resolveMonth(params.get("month") ?? monthKey()); // invalid or future months fall back to the current one
-    const { start, end } = monthRange(dateOfMonth(month));
 
-    const rows = await prisma.transaction.findMany({
-        where: { userId, date: { gte: start, lt: end } },
-        orderBy: [{ date: "asc" }, { id: "asc" }],
-        take: MAX_ROWS,
-        select: { date: true, type: true, category: true, description: true, amount: true, coinsAwarded: true, expAwarded: true },
-    });
-
-    const t = (key: string) => translate(lang, key);
-    const header = ["csv.date", "csv.type", "csv.category", "csv.description", "csv.amount", "csv.coins", "csv.exp"]
-        .map((k) => textCell(t(k)))
-        .join(",");
-
-    const lines = rows.map((r) =>
-        [
-            dayKey(r.date), // YYYY-MM-DD in Bangkok time
-            textCell(t(r.type === "income" ? "fin.income" : "fin.expense")),
-            textCell(translate(lang, `cat.${r.category}`) || r.category),
-            textCell(r.description ?? ""),
-            r.amount.toFixed(2),
-            String(r.coinsAwarded),
-            String(r.expAwarded),
-        ].join(","),
-    );
-
-    // "\uFEFF" = UTF-8 BOM: without it Excel shows Thai text as garbage. CRLF line endings for Excel.
-    const body = "\uFEFF" + [header, ...lines].join("\r\n") + "\r\n";
-
-    return new Response(body, {
-        headers: {
-            "Content-Type": "text/csv; charset=utf-8",
-            "Content-Disposition": `attachment; filename="moneypixel-${month}.csv"`,
-            "Cache-Control": "no-store",
-        },
-    });
+    try {
+        const data = await loadExportData(userId, month, lang);
+        switch (format) {
+            case "csv":
+                return download(buildCsv(data), format, month);
+            case "json":
+                return download(buildJson(data), format, month);
+            case "xlsx":
+                return download(await buildXlsx(data), format, month);
+            case "pdf":
+                return download(await buildPdf(data), format, month);
+        }
+    } catch (err) {
+        console.error(`[export] could not build the ${format} file:`, err);
+        return new Response("Could not create the file", { status: 500 });
+    }
 }

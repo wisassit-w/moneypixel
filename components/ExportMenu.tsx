@@ -1,18 +1,16 @@
 "use client";
 
-import { Download, FileJson, FileSpreadsheet, FileText, Table2, type LucideIcon } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, type LucideIcon } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 
-const FORMATS: { id: "xlsx" | "pdf" | "csv" | "json"; label: string; hint: string; ext: string; icon: LucideIcon }[] = [
+const FORMATS: { id: "xlsx" | "pdf"; label: string; hint: string; ext: string; icon: LucideIcon }[] = [
     { id: "xlsx", label: "export.excel", hint: "export.excelHint", ext: ".xlsx", icon: FileSpreadsheet },
     { id: "pdf", label: "export.pdf", hint: "export.pdfHint", ext: ".pdf", icon: FileText },
-    { id: "csv", label: "export.csv", hint: "export.csvHint", ext: ".csv", icon: Table2 },
-    { id: "json", label: "export.json", hint: "export.jsonHint", ext: ".json", icon: FileJson },
 ];
 
 /**
- * Download this month's summary and transactions. Each option is a plain link to /api/export (a normal file
- * download, not a script-made blob), so it works the same on desktop and in phone browsers.
+ * Download this month's summary and transactions as Excel or PDF. Each option is a plain link to /api/export
+ * (a normal file download, not a script-made blob), so it works the same on desktop and in phone browsers.
  */
 export default function ExportMenu({ month }: { month: string }) {
     const { lang, t } = useLanguage();

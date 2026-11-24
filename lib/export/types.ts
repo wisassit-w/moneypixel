@@ -1,7 +1,7 @@
 import type { MonthlySummary } from "@/lib/summary";
 import { translate, type Lang, type Vars } from "@/lib/translations";
 
-export const EXPORT_FORMATS = ["xlsx", "pdf", "csv", "json"] as const;
+export const EXPORT_FORMATS = ["xlsx", "pdf"] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 export const isExportFormat = (v: unknown): v is ExportFormat =>

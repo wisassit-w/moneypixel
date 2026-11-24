@@ -5,8 +5,6 @@ import { resolveMonth } from "@/lib/months";
 import type { Lang } from "@/lib/translations";
 import { isExportFormat, type ExportFormat } from "@/lib/export/types";
 import { loadExportData } from "@/lib/export/data";
-import { buildCsv } from "@/lib/export/csv";
-import { buildJson } from "@/lib/export/json";
 import { buildXlsx } from "@/lib/export/xlsx";
 import { buildPdf } from "@/lib/export/pdf";
 
@@ -16,8 +14,6 @@ import { buildPdf } from "@/lib/export/pdf";
 // link that works on every phone browser (no client-side blob tricks).
 
 const TYPES: Record<ExportFormat, string> = {
-    csv: "text/csv; charset=utf-8",
-    json: "application/json; charset=utf-8",
     xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     pdf: "application/pdf",
 };
@@ -48,10 +44,6 @@ export async function GET(req: Request) {
     try {
         const data = await loadExportData(userId, month, lang);
         switch (format) {
-            case "csv":
-                return download(buildCsv(data), format, month);
-            case "json":
-                return download(buildJson(data), format, month);
             case "xlsx":
                 return download(await buildXlsx(data), format, month);
             case "pdf":
